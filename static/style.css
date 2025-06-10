@@ -31,10 +31,12 @@ body {
 .chat-output {
     flex: 1;
     overflow-y: auto;
+    background-color: #e5ddd5;
+    padding: 15px;
     border: 1px solid #ccc;
-    padding: 10px;
     margin-bottom: 10px;
-    background: #f9f9f9;
+    border-radius: 10px;
+    font-family: sans-serif;
 }
 
 .chat-input {
@@ -71,24 +73,16 @@ body {
     border-radius: 5px;
     overflow: hidden;
     margin-top: 5px;
+    height: 20px;
 }
 
 .progress-bar {
     width: 0%;
-    height: 20px;
+    height: 100%;
     background-color: #4caf50;
     text-align: center;
     color: white;
     transition: width 0.4s ease;
-}
-
-.chat-output {
-    height: 400px;
-    overflow-y: auto;
-    background-color: #e5ddd5;
-    padding: 15px;
-    border-radius: 10px;
-    font-family: sans-serif;
 }
 
 .message {
@@ -154,27 +148,9 @@ li {
     margin-bottom: 5px;
 }
 
-#progress-bar {
-width: 100%;
-height: 18px;
-margin-top: 5px;
-display: none;
-}
-
-#status {
-margin-top: 10px;
-font-family: monospace;
-white-space: pre-line;
-}
-
-.user-msg, .bot-msg {
-margin: 10px 0;
-}
-
 .error {
-color: red;
+    color: red;
 }
-
 
 .sources-panel {
     margin-top: 15px;

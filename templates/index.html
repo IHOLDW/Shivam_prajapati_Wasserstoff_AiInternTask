@@ -8,7 +8,7 @@
 <body>
 <div class="main-container">
     <div class="upload-section">
-        <h2>📤 Upload Files</h2>
+        <h2>Upload Files</h2>
         <div id="dropZone">Drag & Drop Files Here</div>
         <input type="file" id="fileInput" multiple>
         <button id="uploadBtn" onclick="uploadFiles()" disabled>Upload Files</button>
@@ -17,30 +17,32 @@
         <button onclick="clearFolder()">🧹 Clear Memory</button>
 
         <div id="uploadedFilesList" class="file-list-section">
-    <h4>📄 Uploaded Files</h4>
-    <ul id="fileListContainer"></ul>
-    <div id="progress-container" style="width: 100%; height: 10px; background: #ddd;">
-  <div id="loading-bar" style="width: 0%; height: 100%; background: #4CAF50;"></div>
-</div>
+            <h4>Uploaded Files</h4>
+            <ul id="fileListContainer"></ul>
 
-    <button id="updateFilesBtn" onclick="updateFiles()">🔁 Update Files</button>
-</div>
+            <div class="progress-container">
+                <div class="progress-bar" id="loading-bar"></div>
+            </div>
 
+            <button id="updateFilesBtn" onclick="updateFiles()">Update Files</button>
+        </div>
 
-<script>
-function clearFolder() {
-    fetch('/api/clear', { method: 'POST' })
-        .then(res => res.json())
-        .then(data => {
-            alert(data.message);
-            location.reload();
-        });
-}
-</script>
+        <script>
+        function clearFolder() {
+            fetch('/api/clear', { method: 'POST' })
+                .then(res => res.json())
+                .then(data => {
+                    alert(data.message);
+                    location.reload();
+                });
+        }
+        </script>
     </div>
 
     <div class="chat-section">
         <div class="chat-output" id="chatOutput"></div>
+        <div id="sourcesPanel" class="sources-panel"></div>
+
         <div class="chat-input">
             <textarea id="queryInput" placeholder="Type your question..." disabled></textarea>
             <button id="queryBtn" onclick="sendQuery()" disabled>Ask</button>
@@ -48,21 +50,6 @@ function clearFolder() {
         </div>
     </div>
 </div>
-
-
-<div class="chat-section">
-    <div class="chat-output" id="chatOutput"></div>
-
-    <!-- New Sources Panel -->
-    <div id="sourcesPanel" class="sources-panel"></div>
-
-    <div class="chat-input">
-        <textarea id="queryInput" placeholder="Type your question..." disabled></textarea>
-        <button id="queryBtn" onclick="sendQuery()" disabled>Ask</button>
-        <button id="cancelQueryBtn" onclick="cancelQuery()" style="display: none;">Cancel</button>
-    </div>
-</div>
-
 
 <script src="{{ url_for('static', filename='script.js') }}"></script>
 </body>

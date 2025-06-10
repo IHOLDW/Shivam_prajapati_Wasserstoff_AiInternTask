@@ -1,4 +1,4 @@
-from flask import Flask, render_template, request, jsonify
+from flask import Flask, render_template, request, jsonify, send_from_directory
 from flask_cors import CORS
 import os
 import shutil
@@ -10,7 +10,7 @@ app = Flask(__name__)
 CORS(app)
 
 UPLOAD_FOLDER = "uploads"
-ALLOWED_EXTENSIONS = {".pdf", ".webp", ".jpeg", ".png", ".txt"}
+ALLOWED_EXTENSIONS = {".pdf", ".webp", ".jpeg", ".png", ".txt", ".jpg"}
 MAX_FILE_SIZE_MB = 25
 
 processing_status = {
@@ -22,12 +22,8 @@ processing_status = {
 
 if os.path.exists(UPLOAD_FOLDER):
     shutil.rmtree(UPLOAD_FOLDER)
-
-if not os.path.exists(UPLOAD_FOLDER):
-    os.makedirs(UPLOAD_FOLDER)
-
-    
-
+os.makedirs(UPLOAD_FOLDER)
+  
 app.config['MAX_CONTENT_LENGTH'] = MAX_FILE_SIZE_MB * 1024 * 1024
 
 documents_uploaded = []
@@ -61,7 +57,6 @@ def upload_files():
 
     for file in uploaded:
         filename = secure_filename(file.filename)
-        print(filename)
 
         if not allowed_file(filename):
             return jsonify({"error": f"Unsupported file type: {filename}"}), 400
@@ -97,23 +92,23 @@ def upload_files():
 @app.route("/api/modify_learning", methods=["POST"])
 def api_modify_learning():
     global processed_files
-    print(processed_files)
     data = request.get_json()
     files_to_delete = data.get("files", [])
-    print(files_to_delete)
     modify_learning(files_to_delete)
 
     for fname in files_to_delete:
-        print(fname)
         processed_files.discard(fname)
     
-    print(processed_files)
-
     return jsonify({"message": "Files removed from vector store."})
 
 @app.route("/api/status")
 def api_status():
     return jsonify(processing_status)
+
+@app.route('/uploads/<path:filename>')
+def serve_uploaded_file(filename):
+    return send_from_directory(UPLOAD_FOLDER, filename)
+
 
 @app.route('/api/query', methods=['POST'])
 def query():

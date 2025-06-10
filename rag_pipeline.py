@@ -93,12 +93,11 @@ def clear_db():
 
 def process_documents(file_paths, status=None):
     global processed_file_dict_ids
-    print(file_paths)
 
     for i, f in enumerate(file_paths):
         file_name = os.path.basename(f)
 
-        if file_name.lower().endswith('.txt'):
+        if f.lower().endswith('.txt'):
             chunk = partition_text(
                 filename = f,
                 encoding = "utf-8",
@@ -141,7 +140,7 @@ text chunk: {element}
                 "txt_vectorstore_id": doc_idss
             }
             
-        if file_name.lower().endswith('.pdf'):
+        if f.lower().endswith('.pdf'):
             chunk = partition_pdf(
                 filename= f,
                 infer_table_structure=False,
@@ -190,7 +189,7 @@ text chunk: {element}
                 "pdf_vectorstore_id": doc_idss
             }
 
-        if file_name.lower().endswith('.jpeg') or file_name.lower().endswith('.png') or file_name.lower().endswith('.webp'):
+        if f.lower().endswith('.jpeg') or f.lower().endswith('.png') or f.lower().endswith('.webp') or f.lower().endswith('.jpg'):
             img = Image.open(f)
             img = img.convert('L')
             text = pytesseract.image_to_string(img)
@@ -240,9 +239,6 @@ text_extracted_from_image = {element}"""
                     "img_docstore_id": doc_idss,
                     "img_vectorstore_id": doc_idss
                 }
-
-                if os.path.exists(file_name):
-                    os.rmdir(file_name)
 
         if status:
             status["current"] = i + 1

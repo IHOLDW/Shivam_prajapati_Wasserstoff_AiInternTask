@@ -13,7 +13,7 @@ function uploadFiles() {
     if (files.length === 0) return;
 
     document.getElementById("uploadBtn").disabled = true;
-    const allowedExtensions = [".pdf", ".webp", ".jpeg", ".png", ".txt"];
+    const allowedExtensions = [".pdf", ".webp", ".jpeg", ".png", ".txt", ".jpg"];
     const formData = new FormData();
 
     for (let file of files) {
@@ -70,7 +70,6 @@ function startPollingStatus() {
                         alert("Error while processing documents:\n" + data.error);
                     }
 
-                    // ✅ Fetch and update file list
                     uploadedFiles.clear();
                     fetch('/api/data')
                         .then(res => res.json())
@@ -87,7 +86,41 @@ function startPollingStatus() {
                 alert("Failed to poll status: " + err.message);
                 embedStatus.innerHTML = "❌ Error checking status.";
             });
-    }, 1000);
+    }, 5000);
+}
+
+function displaySources(response) {
+    const sourcesPanel = document.getElementById('sourcesPanel');
+    const files = response.file_name || [];
+    const pages = response.page_number || [];
+
+    if (!files.length) {
+        sourcesPanel.innerHTML = "";
+        return;
+    }
+
+    sourcesPanel.innerHTML = "<strong>📚 Sources:</strong><ul>";
+
+    for (let i = 0; i < files.length; i++) {
+        const file = files[i];
+        const page = pages[i];
+        const ext = file.split('.').pop().toLowerCase();
+        let link = `/uploads/${file}`;
+
+        if (ext === "pdf" && page) {
+            link += `#page=${page}`;
+        }
+
+        sourcesPanel.innerHTML += `
+            <li>
+                <a href="${link}" target="_blank">
+                    ${file}${page ? ` (Page ${page})` : ""}
+                </a>
+            </li>
+        `;
+    }
+
+    sourcesPanel.innerHTML += "</ul>";
 }
 
 function renderFileList() {
@@ -103,7 +136,6 @@ function renderFileList() {
         container.appendChild(li);
     });
 }
-
 
 function updateFiles() {
     const checkboxes = document.querySelectorAll("#fileListContainer input[type='checkbox']");
@@ -130,7 +162,6 @@ function updateFiles() {
       });
 }
 
-
 function clearFolder() {
     fetch('/api/clear', { method: 'POST' })
         .then(res => res.json())
@@ -143,31 +174,11 @@ function clearFolder() {
         });
 }
 
-function renderSources(fileNames = [], pageNumbers = []) {
-    const panel = document.getElementById("sourcesPanel");
-    if (!fileNames.length) {
-        panel.innerHTML = '';
-        return;
-    }
-
-    const sources = fileNames.map((fname, i) => {
-        const page = pageNumbers[i] !== undefined ? ` — Page ${pageNumbers[i]}` : '';
-        return `<li><strong>${fname}</strong>${page}</li>`;
-    });
-
-    panel.innerHTML = `
-        <h4>📚 Sources</h4>
-        <ul>${sources.join('')}</ul>
-    `;
-}
-
 function sendQuery() {
     const query = document.getElementById("queryInput").value.trim();
     if (!query) return;
 
     const chatBox = document.getElementById("chatOutput");
-
-    // User message
     chatBox.innerHTML += `
         <div class="message user-message">
             <div class="bubble">${escapeHtml(query)}</div>
@@ -175,7 +186,6 @@ function sendQuery() {
     `;
     chatBox.scrollTop = chatBox.scrollHeight;
 
-    // Bot is thinking
     const loader = document.createElement("div");
     loader.className = "message bot-message";
     loader.innerHTML = `<div class="bubble"><em>Thinking...</em></div>`;
@@ -184,7 +194,6 @@ function sendQuery() {
 
     document.getElementById("queryBtn").disabled = true;
     document.getElementById("cancelQueryBtn").style.display = "inline";
-
     queryController = new AbortController();
 
     fetch("/api/query", {
@@ -196,7 +205,7 @@ function sendQuery() {
         .then(res => res.json())
         .then(data => {
             loader.innerHTML = `<div class="bubble">${formatBotReply(data.answer)}</div>`;
-            renderSources(data.file_name, data.page_number);
+            displaySources(data);
         })
         .catch(() => {
             loader.innerHTML = `<div class="bubble"><strong>Bot:</strong> Query was cancelled.</div>`;
@@ -219,9 +228,7 @@ function escapeHtml(text) {
 
 function formatBotReply(text) {
     return escapeHtml(text)
-        .replace(/\*\*(.*?)\*\*/g, "<strong>$1</strong>") // Bold
-        .replace(/\*(.*?)\*/g, "<li>$1</li>")             // List item
-        .replace(/\n/g, "<br>");                          // Line breaks
+        .replace(/\*\*(.*?)\*\*/g, "<strong>$1</strong>")
+        .replace(/\*(.*?)\*/g, "<li>$1</li>")
+        .replace(/\n/g, "<br>");
 }
-
-
