@@ -45,8 +45,8 @@ A powerful Retrieval-Augmented Generation (RAG) chatbot with real-time document 
 
 1. **Clone the repo**:
     ```bash
-    git clone https://github.com/your-username/rag-chatbot.git
-    cd rag-chatbot
+    git clone https://github.com/IHOLDW/Shivam_prajapati_Wasserstoff_AiInternTask.git
+    cd Shivam_prajapati_Wasserstoff_AiInternTask
     ```
 
 2. **Install Python dependencies**:
