@@ -1,6 +1,36 @@
 let cancel_query = null;
 let upload_files = new Set();
 
+const drop = document.getElementById('dropZone');
+
+drop.addEventListener('dragover', function (e) {
+    e.preventDefault();
+    drop.classList.add('drag-over');
+});
+
+drop.addEventListener('dragleave', function (e) {
+    e.preventDefault();
+    drop.classList.remove('drag-over');
+});
+
+drop.addEventListener('drop', function (e) {
+    e.preventDefault();
+    drop.classList.remove('drag-over');
+
+    const droppedFiles = e.dataTransfer.files;
+    if (!droppedFiles.length) return;
+
+    const file_inp = document.getElementById('fileInput');
+
+    const dt = new DataTransfer();
+    for (let file of droppedFiles) {
+        dt.items.add(file);
+    }
+    file_inp.files = dt.files;
+
+    document.getElementById("uploadBtn").disabled = false;
+});
+
 document.getElementById("fileInput").addEventListener("change", function () {
     document.getElementById("uploadBtn").disabled = this.files.length === 0;
 });
