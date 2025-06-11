@@ -1,17 +1,26 @@
-from flask import Flask, render_template, request, jsonify, send_from_directory
-from flask_cors import CORS
 import os
 import shutil
+from flask import Flask, render_template, request, jsonify, send_from_directory
+from flask_cors import CORS
+from dotenv import load_dotenv
 from threading import Thread
 from werkzeug.utils import secure_filename
-from rag_pipeline import process_documents, query_documents, clear_db, modify_learning
 
 app = Flask(__name__)
 CORS(app)
 
-UPLOAD_FOLDER = "uploads"
-ALLOWED_EXTENSIONS = {".pdf", ".webp", ".jpeg", ".png", ".txt", ".jpg"}
+load_dotenv()
+
+UPLOAD_FOLDER = os.getenv("UPLOAD_FOLDER")
+OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL")
+GROQ_API_KEY = os.getenv("GROQ_API_KEY")
+ALLOWED_EXTENSIONS = set(os.getenv("ALLOWED_EXTENSIONS", "").split(","))
 MAX_FILE_SIZE_MB = 25
+
+if not OLLAMA_BASE_URL or not GROQ_API_KEY:
+    raise SystemExit("No LLM selected. Please set OLLAMA_BASE_URL or GROQ_API_KEY in your .env file.")
+
+from rag_pipeline import process_documents, query_documents, clear_db, modify_learning
 
 processing_status = {
     "total": 0,
@@ -33,19 +42,24 @@ processed_files = set()
 def index():
     return render_template('index.html')
 
+#this funtion just returns the list to js file, of all the files that are uplaoded
 @app.route('/api/data', methods=['GET'])
 def get_uploaded_files():
     return jsonify({'files': documents_uploaded})
 
+#api route to clear the storage of database
 @app.route('/api/clear', methods=['POST'])
 def clear_files():
     global processed_files
-    processed_files.clear()
-    for f in os.listdir(UPLOAD_FOLDER):
-        os.remove(os.path.join(UPLOAD_FOLDER, f))
-    clear_db()
-    documents_uploaded.clear()
-    return jsonify({'message': 'Folder cleared.'})
+    try:
+        processed_files.clear()
+        for f in os.listdir(UPLOAD_FOLDER):
+            os.remove(os.path.join(UPLOAD_FOLDER, f))
+        clear_db()
+        documents_uploaded.clear()
+        return jsonify({'message': 'Folder cleared.'})
+    except Exception as e:
+        return jsonify({'message': 'unable to clear files'}), 500
 
 def allowed_file(filename):
     return os.path.splitext(filename)[1] in ALLOWED_EXTENSIONS
@@ -94,13 +108,16 @@ def api_modify_learning():
     global processed_files
     data = request.get_json()
     files_to_delete = data.get("files", [])
-    modify_learning(files_to_delete)
-
-    for fname in files_to_delete:
-        processed_files.discard(fname)
+    try:
+        modify_learning(files_to_delete)
+        for fname in files_to_delete:
+            processed_files.discard(fname)
+        return jsonify({"message": "Files removed from vector store."})
+    except Exception as e:
+        return jsonify({"message": "Unable to remove file"}), 500
     
-    return jsonify({"message": "Files removed from vector store."})
-
+#api to check live progess of files processed
+#causing some error in multithreading
 @app.route("/api/status")
 def api_status():
     return jsonify(processing_status)
@@ -110,16 +127,23 @@ def serve_uploaded_file(filename):
     return send_from_directory(UPLOAD_FOLDER, filename)
 
 
+#api route to generate the query
 @app.route('/api/query', methods=['POST'])
 def query():
     user_query = request.form.get('query')
-    answer = query_documents(user_query)
-    page_number = []
-    file_name = []
-    for i in answer["context"]["texts"]:
-        page_number.append(i.metadata.page_number)
-        file_name.append(i.metadata.filename)
-    return jsonify({'answer': answer["response"], 'page_number': page_number, "file_name": file_name})
+    try:
+        answer = query_documents(user_query)
+        page_number = []
+        file_name = []
+        for i in answer["context"]["texts"]:
+            page_number.append(i.metadata.page_number)
+            file_name.append(i.metadata.filename)
+        return jsonify({'success': True, 'answer': answer["response"], 'page_number': page_number, "file_name": file_name})
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': f"Unexpected error: {str(e)}"
+        }), 500
 
 if __name__ == '__main__':
     app.run(debug=True)

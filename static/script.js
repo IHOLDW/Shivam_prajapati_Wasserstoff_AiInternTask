@@ -1,5 +1,5 @@
-let queryController = null;
-let uploadedFiles = new Set();
+let cancel_query = null;
+let upload_files = new Set();
 
 document.getElementById("fileInput").addEventListener("change", function () {
     document.getElementById("uploadBtn").disabled = this.files.length === 0;
@@ -31,21 +31,23 @@ function uploadFiles() {
         formData.append("files[]", file);
     }
 
-    embedStatus.innerHTML = '⏳ Uploading...';
+    embedStatus.innerHTML = ' Uploading...';
 
     fetch("/api/upload", {
         method: "POST",
         body: formData
     }).then(() => {
-        embedStatus.innerHTML = '⏳ Processing...';
-        startPollingStatus();
+        embedStatus.innerHTML = ' Processing...';
+        progress_staus();
     }).catch((err) => {
         alert("Upload failed: " + err.message);
         document.getElementById("uploadBtn").disabled = false;
     });
 }
 
-function startPollingStatus() {
+// causing problem in multithreading maybe increse the time interval
+// used to check live progress of files being processes
+function progress_staus() {
     const interval = setInterval(() => {
         fetch('/api/status')
             .then(res => res.json())
@@ -54,13 +56,13 @@ function startPollingStatus() {
                 progressBar.style.width = pct + '%';
 
                 if (data.processing) {
-                    embedStatus.innerHTML = `⏳ Processing ${data.current}/${data.total}`;
+                    embedStatus.innerHTML = ` Processing ${data.current}/${data.total}`;
                     document.getElementById("uploadBtn").disabled = true;
                     document.getElementById("fileInput").disabled = true;
                 } else {
                     clearInterval(interval);
                     progressBar.style.width = '100%';
-                    embedStatus.innerHTML = data.error ? `❌ Error: ${data.error}` : '✅ Documents processed.';
+                    embedStatus.innerHTML = data.error ? ` Error: ${data.error}` : '✅ Documents processed.';
                     document.getElementById("uploadBtn").disabled = false;
                     document.getElementById("fileInput").disabled = false;
                     document.getElementById("queryInput").disabled = false;
@@ -70,26 +72,26 @@ function startPollingStatus() {
                         alert("Error while processing documents:\n" + data.error);
                     }
 
-                    uploadedFiles.clear();
+                    upload_files.clear();
                     fetch('/api/data')
                         .then(res => res.json())
                         .then(data => {
                             for (let file of data.files) {
-                                uploadedFiles.add(file);
+                                upload_files.add(file);
                             }
-                            renderFileList();
+                            show_files();
                         });
                 }
             })
             .catch(err => {
                 clearInterval(interval);
                 alert("Failed to poll status: " + err.message);
-                embedStatus.innerHTML = "❌ Error checking status.";
+                embedStatus.innerHTML = "Error checking status.";
             });
     }, 5000);
 }
 
-function displaySources(response) {
+function source_area(response) {
     const sourcesPanel = document.getElementById('sourcesPanel');
     const files = response.file_name || [];
     const pages = response.page_number || [];
@@ -99,7 +101,7 @@ function displaySources(response) {
         return;
     }
 
-    sourcesPanel.innerHTML = "<strong>📚 Sources:</strong><ul>";
+    sourcesPanel.innerHTML = "<strong> Sources:</strong><ul>";
 
     for (let i = 0; i < files.length; i++) {
         const file = files[i];
@@ -123,10 +125,10 @@ function displaySources(response) {
     sourcesPanel.innerHTML += "</ul>";
 }
 
-function renderFileList() {
+function show_files() {
     const container = document.getElementById("fileListContainer");
     container.innerHTML = "";
-    uploadedFiles.forEach(fname => {
+    upload_files.forEach(fname => {
         const li = document.createElement("li");
         li.innerHTML = `
             <label>
@@ -145,7 +147,7 @@ function updateFiles() {
         const fname = cb.getAttribute("data-fname");
         if (!cb.checked) {
             filesToDelete.push(fname);
-            uploadedFiles.delete(fname);
+            upload_files.delete(fname);
         }
     });
 
@@ -158,7 +160,7 @@ function updateFiles() {
     }).then(res => res.json())
       .then(data => {
           alert(data.message || 'Files updated.');
-          renderFileList();
+          show_files();
       });
 }
 
@@ -169,8 +171,8 @@ function clearFolder() {
             alert(data.message);
             embedStatus.innerHTML = '';
             progressBar.style.width = '0%';
-            uploadedFiles.clear();
-            renderFileList();
+            upload_files.clear();
+            show_files();
         });
 }
 
@@ -194,18 +196,23 @@ function sendQuery() {
 
     document.getElementById("queryBtn").disabled = true;
     document.getElementById("cancelQueryBtn").style.display = "inline";
-    queryController = new AbortController();
+    cancel_query = new AbortController();
 
     fetch("/api/query", {
         method: "POST",
         body: new URLSearchParams({ query }),
-        signal: queryController.signal,
+        signal: cancel_query.signal,
         headers: { "Content-Type": "application/x-www-form-urlencoded" }
     })
         .then(res => res.json())
         .then(data => {
-            loader.innerHTML = `<div class="bubble">${formatBotReply(data.answer)}</div>`;
-            displaySources(data);
+            if(data.success){
+                loader.innerHTML = `<div class="bubble">${formatBotReply(data.answer)}</div>`;
+                source_area(data);
+            }else{
+                loader.innerHTML = `<div class="bubble">${formatBotReply("error")}</div>`
+                alert(data.error)
+            }
         })
         .catch(() => {
             loader.innerHTML = `<div class="bubble"><strong>Bot:</strong> Query was cancelled.</div>`;
@@ -217,9 +224,10 @@ function sendQuery() {
 }
 
 function cancelQuery() {
-    if (queryController) queryController.abort();
+    if (cancel_query) cancel_query.abort();
 }
 
+//remove this, if using it local machine
 function escapeHtml(text) {
     const div = document.createElement("div");
     div.innerText = text;
