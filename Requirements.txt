@@ -1,0 +1,12 @@
+Flask
+flask-cors
+python-dotenv
+pytesseract
+Pillow
+unstructured
+langchain
+langchain-core
+langchain-community
+langchain-groq
+langchain-ollama
+chromadb
