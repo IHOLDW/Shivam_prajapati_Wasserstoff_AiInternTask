@@ -10,7 +10,7 @@ from unstructured.partition.pdf import partition_pdf
 from unstructured.partition.text import partition_text
 from langchain.schema.document import Document
 from langchain.vectorstores import Chroma
-from langchain.retrievers.multi_vector import MultiVectorRetriever
+from langchain.retrievers.multi_vector import MultiVectorRetriever, SearchType
 from langchain.storage import InMemoryStore
 from langchain_core.output_parsers import StrOutputParser
 from langchain_core.runnables import RunnablePassthrough, RunnableLambda
@@ -50,8 +50,15 @@ id_key = 'doc_id'
 retriever= MultiVectorRetriever(
     vectorstore = vector_store,
     docstore = storage,
-    id_key = id_key
+    id_key = id_key,
+    search_type = SearchType.mmr,
+            search_kwargs = {
+            "k": 5,       
+            "fetch_k": 15,
+            "lambda_mult": 0.5
+    }
 )
+
 
 #add a try catch here
 #this funtions helps user to delete partical files from database
@@ -59,6 +66,8 @@ def modify_learning(files_to_delete: list):
     global processed_file_dict_ids
 
     for i in files_to_delete:
+        if i not in processed_file_dict_ids:
+            continue
         try:
             if i.lower().endswith('.pdf'):
                 vector_id = processed_file_dict_ids[i]["pdf_docstore_id"]
@@ -75,7 +84,7 @@ def modify_learning(files_to_delete: list):
 
             processed_file_dict_ids.pop(i)
         except Exception as e:
-            raise Exception("unable to update memory: {e}")
+            raise Exception(f"unable to update memory: {e}")
         
 
 #this funtion is used to clear all files stored in database, thus reseting memory
@@ -102,184 +111,206 @@ def clear_db():
         processed_file_dict_ids = {}
         storage = InMemoryStore()
         retriever = MultiVectorRetriever(
-        vectorstore=vector_store,
-        docstore=storage,
-        id_key='doc_id'
+            vectorstore=vector_store,
+            docstore=storage,
+            id_key='doc_id',
+            search_type = SearchType.mmr,
+            search_kwargs = {
+            "k": 5,       
+            "fetch_k": 15,
+            "lambda_mult": 0.5
+            }
         )
     except Exception as e:
         raise Exception(f"Error deleting from InMemoryStore: {e}")
     
 
-#main part of the pipeline here all processing of documents happen, first it divides the file into chunks, then creates a summary using llm.
-#After that it stores embedding and document chunk into database
-def process_documents(file_paths, status=None):
+def process_txt(f, file_name, status):
+    global processed_file_dict_ids
+    try:
+        chunk = partition_text(
+            filename = f,
+            encoding = "utf-8",
+            max_characters=10000,
+            combine_text_under_n_chars=2000,
+            new_after_n_chars=6000,
+            chunking_strategy= "by_title"
+        )
+
+        texts = []
+        for i in chunk:
+            if "CompositeElement" in str(type(i)):
+                texts.append(i)
+        prompt_text = """You are an assistant tasked with summarizing tables and text.
+Give a concise summary of the table or text.
+Respond only with the summary, no additionnal comment.
+Do not start your message by saying "Here is a summary" or anything like that.
+Just give the summary as it is.
+text chunk: {element}
+"""
+        prompt = ChatPromptTemplate.from_template(prompt_text)
+        summarize_chain = {"element": lambda x: x} | prompt | chat_groq | StrOutputParser()
+        text_summaries = summarize_chain.batch(texts, {"max_concurrency": 3})
+        doc_idss = [str(uuid.uuid4()) for _ in texts]
+        summary_text = []
+        for i, summary in enumerate(text_summaries):
+            page_num = texts[i].metadata.page_number
+            summary_text.append(Document(
+                page_content=summary,
+                metadata={
+                    id_key: doc_idss[i],
+                    "file_name": file_name,
+                    "page_number": page_num
+                }
+            ))
+        retriever.vectorstore.add_documents(summary_text, ids = doc_idss)
+        retriever.docstore.mset(list(zip(doc_idss, texts)))
+        processed_file_dict_ids[str(file_name)] = {
+            "txt_docstore_id": doc_idss,
+            "txt_vectorstore_id": doc_idss
+        }
+    except Exception as e:
+        if status:
+            status["error"] = f"Error extracting text: {str(e)}"
+            status["processing"] = False
+        return
+    
+    
+def process_img(f, file_name, status):
     global processed_file_dict_ids
 
-    for i, f in enumerate(file_paths):
-        file_name = os.path.basename(f)
-        if f.lower().endswith('.txt'):
-            try:
-                chunk = partition_text(
-                    filename = f,
-                    encoding = "utf-8",
-                    max_characters=10000,
-                    combine_text_under_n_chars=2000,
-                    new_after_n_chars=6000,
-                    chunking_strategy= "by_title"
-                )
+    try:
+        img = Image.open(f)
+        img = img.convert('L')
+        text = pytesseract.image_to_string(img)
 
-                texts = []
-                for i in chunk:
-                    if "CompositeElement" in str(type(i)):
-                        texts.append(i)
-                prompt_text = """You are an assistant tasked with summarizing tables and text.
-Give a concise summary of the table or text.
-Respond only with the summary, no additionnal comment.
-Do not start your message by saying "Here is a summary" or anything like that.
-Just give the summary as it is.
-text chunk: {element}
-"""
-                prompt = ChatPromptTemplate.from_template(prompt_text)
-                summarize_chain = {"element": lambda x: x} | prompt | chat_groq | StrOutputParser()
-                text_summaries = summarize_chain.batch(texts, {"max_concurrency": 3})
-                doc_idss = [str(uuid.uuid4()) for _ in texts]
-                summary_text = []
-                for i, summary in enumerate(text_summaries):
-                    page_num = texts[i].metadata.page_number
-                    summary_text.append(Document(
-                        page_content=summary,
-                        metadata={
-                            id_key: doc_idss[i],
-                            "file_name": file_name,
-                            "page_number": page_num
-                        }
-                    ))
-                retriever.vectorstore.add_documents(summary_text, ids = doc_idss)
-                retriever.docstore.mset(list(zip(doc_idss, texts)))
-                processed_file_dict_ids[str(file_name)] = {
-                    "txt_docstore_id": doc_idss,
-                    "txt_vectorstore_id": doc_idss
-                }
-            except Exception as e:
-                if status:
-                    status["error"] = f"Error extracting text: {str(e)}"
-                    status["processing"] = False
-                return    
+        if len(text.strip()) > 0:
+            with open(f"{file_name}", "w", encoding="utf-8") as txt_file:
+                txt_file.write(text)
+            chunks = partition_text(
+            filename = file_name,
+            chunking_strategy="by_title",
+            max_characters=10000,
+            combine_text_under_n_chars=2000,
+            new_after_n_chars=6000
+            )
 
-        if f.lower().endswith('.pdf'):
-            try:
-                chunk = partition_pdf(
-                    filename= f,
-                    infer_table_structure=False,
-                    strategy="hi_res",
-                    extract_image_block_to_payload=True,
-                    chunking_strategy="by_title",
-                    max_characters=10000,
-                    combine_text_under_n_chars=2000,
-                    new_after_n_chars=6000,
-                )
-                texts = []
-                for ch in chunk:
-                    if "CompositeElement" in str(type((ch))):
-                        texts.append(ch)
-                    
-                prompt_text = """You are an assistant tasked with summarizing tables and text.
-Give a concise summary of the table or text.
-Respond only with the summary, no additionnal comment.
-Do not start your message by saying "Here is a summary" or anything like that.
-Just give the summary as it is.
-text chunk: {element}
-"""
-                prompt = ChatPromptTemplate.from_template(prompt_text)
-                summarize_chain = {"element": lambda x: x} | prompt | chat_groq | StrOutputParser()
-                text_summaries = summarize_chain.batch(texts, {"max_concurrency": 3})
+            texts = []
+            for i in chunks:
+                if "CompositeElement" in str(type(i)):
+                    i.metadata.filename = file_name
+                    texts.append(i)
 
-                doc_idss = [str(uuid.uuid4()) for _ in texts]
-                summary_text = []
-                for i, summary in enumerate(text_summaries):
-                    page_num = texts[i].metadata.page_number
-                    summary_text.append(Document(
-                        page_content=summary,
-                        metadata={
-                            id_key: doc_idss[i],
-                            "file_name": file_name,
-                            "page_number": page_num
-                        }
-                    ))
-
-                
-                retriever.vectorstore.add_documents(summary_text, ids = doc_idss)
-                retriever.docstore.mset(list(zip(doc_idss, texts)))
-                
-                processed_file_dict_ids[str(file_name)] = {
-                    "pdf_docstore_id": doc_idss,
-                    "pdf_vectorstore_id": doc_idss
-                }
-            except Exception as e:
-                if status:
-                    status["error"] = f"Error processing pdf: {str(e)}"
-                    status["processing"] = False
-                return   
-
-        if f.lower().endswith('.jpeg') or f.lower().endswith('.png') or f.lower().endswith('.webp') or f.lower().endswith('.jpg'):
-            try:
-                img = Image.open(f)
-                img = img.convert('L')
-                text = pytesseract.image_to_string(img)
-
-                if len(text.strip()) > 0:
-                    with open(f"{file_name}", "w", encoding="utf-8") as txt_file:
-                        txt_file.write(text)
-                    chunks = partition_text(
-                    filename = file_name,
-                    chunking_strategy="by_title",
-                    max_characters=10000,
-                    combine_text_under_n_chars=2000,
-                    new_after_n_chars=6000
-                    )
-
-                    texts = []
-                    for i in chunks:
-                        if "CompositeElement" in str(type(i)):
-                            i.metadata.filename = file_name
-                            texts.append(i)
-
-                    prompt_text = """The text that is given to you is extracted from a image.
+            prompt_text = """The text that is given to you is extracted from a image.
 If there are some questions asked in the image do not answer them unless told to do so,
 just summarize the text, is very short form as you are trying to tell whats in the image.
 if questions are present just get a brief of them for future answering purpose,
 And at the starting do state that the this is the infomation accoring to the text in the image
 text_extracted_from_image = {element}""" 
 
-                    prompt = ChatPromptTemplate.from_template(prompt_text)
-                    summarize_chain = {"element": lambda x: x} | prompt | chat_groq | StrOutputParser()
-                    text_summaries = summarize_chain.batch(texts, {"max_concurrency": 3})
-                    doc_idss = [str(uuid.uuid4()) for _ in texts]
-                    summary_text = []
-                    for i, summary in enumerate(text_summaries):
-                        page_num = texts[i].metadata.page_number
-                        summary_text.append(Document(
-                            page_content=summary,
-                            metadata={
-                                id_key: doc_idss[i],
-                                "file_name": file_name,
-                                "page_number": page_num
-                            }
-                        ))
-                    retriever.vectorstore.add_documents(summary_text, ids = doc_idss)
-                    retriever.docstore.mset(list(zip(doc_idss, texts)))
-                    processed_file_dict_ids[str(file_name)] = {
-                        "img_docstore_id": doc_idss,
-                        "img_vectorstore_id": doc_idss
+            prompt = ChatPromptTemplate.from_template(prompt_text)
+            summarize_chain = {"element": lambda x: x} | prompt | chat_groq | StrOutputParser()
+            text_summaries = summarize_chain.batch(texts, {"max_concurrency": 3})
+            doc_idss = [str(uuid.uuid4()) for _ in texts]
+            summary_text = []
+            for i, summary in enumerate(text_summaries):
+                page_num = texts[i].metadata.page_number
+                summary_text.append(Document(
+                    page_content=summary,
+                    metadata={
+                        id_key: doc_idss[i],
+                        "file_name": file_name,
+                        "page_number": page_num
                     }
+                ))
+            retriever.vectorstore.add_documents(summary_text, ids = doc_idss)
+            retriever.docstore.mset(list(zip(doc_idss, texts)))
+            processed_file_dict_ids[str(file_name)] = {
+                "img_docstore_id": doc_idss,
+                "img_vectorstore_id": doc_idss
+            }
 
-                    if os.path.exists(file_name):
-                        os.remove(file_name)
-            except Exception as e:
-                if status:
-                    status["error"] = f"Error extracting text: {str(e)}"
-                    status["processing"] = False
-                return
+            if os.path.exists(file_name):
+                os.remove(file_name)
+    except Exception as e:
+        if status:
+            status["error"] = f"Error extracting text: {str(e)}"
+            status["processing"] = False
+        return
+
+
+def process_pdf(f, file_name, status):
+    global processed_file_dict_ids
+
+    try:
+        chunk = partition_pdf(
+            filename= f,
+            infer_table_structure=False,
+            strategy="hi_res",
+            extract_image_block_to_payload=True,
+            chunking_strategy="by_title",
+            max_characters=10000,
+            combine_text_under_n_chars=2000,
+            new_after_n_chars=6000,
+        )
+        texts = []
+        for ch in chunk:
+            if "CompositeElement" in str(type((ch))):
+                texts.append(ch)
+            
+        prompt_text = """You are an assistant tasked with summarizing tables and text.
+Give a concise summary of the table or text.
+Respond only with the summary, no additionnal comment.
+Do not start your message by saying "Here is a summary" or anything like that.
+Just give the summary as it is.
+text chunk: {element}
+"""
+        prompt = ChatPromptTemplate.from_template(prompt_text)
+        summarize_chain = {"element": lambda x: x} | prompt | chat_groq | StrOutputParser()
+        text_summaries = summarize_chain.batch(texts, {"max_concurrency": 3})
+
+        doc_idss = [str(uuid.uuid4()) for _ in texts]
+        summary_text = []
+        for i, summary in enumerate(text_summaries):
+            page_num = texts[i].metadata.page_number
+            summary_text.append(Document(
+                page_content=summary,
+                metadata={
+                    id_key: doc_idss[i],
+                    "file_name": file_name,
+                    "page_number": page_num
+                }
+            ))
+
+        
+        retriever.vectorstore.add_documents(summary_text, ids = doc_idss)
+        retriever.docstore.mset(list(zip(doc_idss, texts)))
+        
+        processed_file_dict_ids[str(file_name)] = {
+            "pdf_docstore_id": doc_idss,
+            "pdf_vectorstore_id": doc_idss
+        }
+    except Exception as e:
+        if status:
+            status["error"] = f"Error processing pdf: {str(e)}"
+            status["processing"] = False
+        return
+
+
+#main part of the pipeline here all processing of documents happen, first it divides the file into chunks, then creates a summary using llm.
+#After that it stores embedding and document chunk into database
+def process_documents(file_paths, status=None):
+
+    for i, f in enumerate(file_paths):
+        file_name = os.path.basename(f)
+        if f.lower().endswith('.txt'):
+            process_txt(f, file_name, status)
+
+        if f.lower().endswith('.pdf'):
+            process_pdf(f, file_name, status)
+
+        if f.lower().endswith('.jpeg') or f.lower().endswith('.png') or f.lower().endswith('.webp') or f.lower().endswith('.jpg'):
+            process_img(f, file_name, status)
 
         if status:
             status["current"] = i + 1

@@ -15,7 +15,7 @@ UPLOAD_FOLDER = os.getenv("UPLOAD_FOLDER")
 OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL")
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 ALLOWED_EXTENSIONS = set(os.getenv("ALLOWED_EXTENSIONS", "").split(","))
-MAX_FILE_SIZE_MB = 25
+MAX_FILE_SIZE_MB = 50
 
 if not OLLAMA_BASE_URL or not GROQ_API_KEY:
     raise SystemExit("No LLM selected. Please set OLLAMA_BASE_URL or GROQ_API_KEY in your .env file.")
@@ -28,6 +28,7 @@ processing_status = {
     "processing": False,
     "error": None
 }
+
 
 if os.path.exists(UPLOAD_FOLDER):
     shutil.rmtree(UPLOAD_FOLDER)
